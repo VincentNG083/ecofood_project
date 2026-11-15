@@ -1,21 +1,33 @@
-from sqlalchemy import Column, Integer, String, Float, Date
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text
+from sqlalchemy.orm import relationship
 from database import Base
 
-class FoodItemModel(Base):
-    __tablename__ = "food_items"
 
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+class Food(Base):
+    __tablename__ = "foods"
+
+    id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True, nullable=False)
-    category = Column(String, nullable=False)
-    quantity = Column(Float, nullable=False)
-    unit = Column(String, nullable=False)
-    expiry_date = Column(Date, nullable=False)
-    storage_zone = Column(String, nullable=False)  # Ngăn mát, Ngăn đông, Tủ khô
+    aliases = Column(String, nullable=True)
+    category = Column(String, index=True, nullable=False)
+    thumbnail_url = Column(String, nullable=True)
+
+    methods = relationship(
+        "PreservationMethod",
+        back_populates="food",
+        cascade="all, delete-orphan",
+    )
 
 
-class StorageZoneModel(Base):
-    __tablename__ = "storage_zones"
+class PreservationMethod(Base):
+    __tablename__ = "preservation_methods"
 
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    name = Column(String, unique=True, index=True, nullable=False)
-    description = Column(String, nullable=True)
+    id = Column(Integer, primary_key=True, index=True)
+    food_id = Column(Integer, ForeignKey("foods.id"), nullable=False)
+    method_label = Column(String, nullable=False)       # VD: "Ngăn mát (ngắn ngày)"
+    storage_zone = Column(String, nullable=False)       # VD: "Ngăn mát"
+    shelf_life_text = Column(String, nullable=False)    # VD: "1 - 2 ngày"
+    is_default = Column(Boolean, default=False)
+    steps_json = Column(Text, nullable=False)           # JSON list các bước + ảnh/video
+
+    food = relationship("Food", back_populates="methods")

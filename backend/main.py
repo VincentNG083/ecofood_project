@@ -1,37 +1,51 @@
-from fastapi import FastAPI, Depends, HTTPException
+from typing import List, Optional
+
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from database import engine, Base, get_db
+
+import crud
 import models
 import schemas
-import crud
+from database import Base, engine, get_db
 
-# Tự động tạo bảng trong cơ sở dữ liệu SQLite
-Base.metadata.create_all(bind=engine)
+# Tạo bảng mới nếu chưa có
+models.Base.metadata.create_all(bind=engine)
 
+app = FastAPI(title="ECOFOOD API", version="2.0.0")
 
-app = FastAPI(title="ECOFOOD API", version="1.0.0")
-
-# Cấu hình CORS cho phép Flutter Web gọi API
+# Cho phép Flutter / Web gọi API cục bộ trong quá trình phát triển
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Cho phép tất cả các nguồn gọi tới
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],  # Cho phép mọi phương thức (GET, POST,...)
-    allow_headers=["*"],  # Cho phép mọi header
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
-# API lấy danh sách thực phẩm (GET)
-@app.get("/items/", response_model=list[schemas.FoodItemResponse])
-def read_food_items(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    items = crud.get_food_items(db, skip=skip, limit=limit)
-    return items
 
-# API thêm mới thực phẩm (POST)
-@app.post("/items/", response_model=schemas.FoodItemResponse)
-def create_food_item(item: schemas.FoodItemCreate, db: Session = Depends(get_db)):
-    return crud.create_food_item(db=db, item=item)
 
-# Api Test
 @app.get("/")
-def read_root():
-    return {"message": "Welcome to ECOFOOD API!"}
+def health_check():
+    return {"status": "ok", "app": "ECOFOOD", "version": "2.0.0"}
+
+
+@app.post("/foods/", response_model=schemas.FoodResponse, status_code=201)
+def create_food(food_in: schemas.FoodCreate, db: Session = Depends(get_db)):
+    return crud.create_food_with_methods(db=db, food_in=food_in)
+
+
+@app.get("/foods/", response_model=List[schemas.FoodResponse])
+def list_foods(
+    q: Optional[str] = Query(default=None, description="Từ khóa tìm theo tên hoặc alias"),
+    category: Optional[str] = Query(default=None, description="Lọc theo danh mục thực phẩm"),
+    db: Session = Depends(get_db),
+):
+    return crud.search_foods(db=db, query=q, category=category)
+
+
+@app.get("/foods/{food_id}", response_model=schemas.FoodResponse)
+def get_food(food_id: int, db: Session = Depends(get_db)):
+    food = crud.get_food_by_id(db=db, food_id=food_id)
+    if not food:
+        raise HTTPException(status_code=404, detail="Không tìm thấy thực phẩm")
+    return food
