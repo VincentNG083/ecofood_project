@@ -1,15 +1,12 @@
 import 'package:flutter/material.dart';
 import '../main.dart';
-import '../services/api_service.dart';
-import 'storage_detail_screen.dart';
-import 'ocr_scanner_screen.dart';
-import 'voice_input_screen.dart';
-import 'manual_add_screen.dart';
-import 'recommend_screen.dart';
-import 'setting_screen.dart';
+import '../models/food_guide.dart';
+import '../services/food_api_service.dart';
+import 'food_scanner_screen.dart';
+import 'food_detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  final ApiService apiService;
+  final FoodApiService apiService;
 
   const HomeScreen({super.key, required this.apiService});
 
@@ -18,93 +15,311 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _activeTab = 0;
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _selectedCategory = 'Tất cả';
 
-  // SCREEN 5: Popup menu chọn cách nhập khi bấm dấu '+' ở dưới
-  void _openAddMenuPopup() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final surface = isDark ? AppTokens.darkSurface : AppTokens.lightSurface;
+  final List<String> _categories = [
+    'Tất cả',
+    'Rau củ',
+    'Thịt cá',
+    'Sữa & Trứng',
+    'Đồ khô',
+  ];
 
-    showModalBottomSheet(
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onFilterChanged() {
+    widget.apiService.fetchFoods(
+      query: _searchCtrl.text,
+      category: _selectedCategory,
+    );
+  }
+
+  void _showServerSettingsDialog() {
+    final ctrl = TextEditingController(text: widget.apiService.baseUrl);
+    showDialog(
       context: context,
-      backgroundColor: surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Cấu hình địa chỉ Server',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Nhập IP máy tính chạy FastAPI (VD: http://192.168.1.15:8000 khi test trên điện thoại):',
+              style: TextStyle(fontSize: 12.5, color: Colors.grey),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Server URL',
+                prefixIcon: Icon(Icons.dns_outlined),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('Hủy'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTokens.primary,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () {
+              widget.apiService.updateBaseUrl(ctrl.text);
+              Navigator.pop(dialogCtx);
+            },
+            child: const Text('Kết nối'),
+          ),
+        ],
       ),
-      builder: (sheetCtx) {
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+    );
+  }
+
+  void _openScanner({required bool isReceiptMode}) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => FoodScannerScreen(
+          apiService: widget.apiService,
+          isReceiptMode: isReceiptMode,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: widget.apiService,
+      builder: (context, _) {
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        final surface =
+            isDark ? AppTokens.darkSurface : AppTokens.lightSurface;
+        final border = isDark ? AppTokens.darkBorder : AppTokens.lightBorder;
+        final subtext =
+            isDark ? AppTokens.darkSubtext : AppTokens.lightSubtext;
+
+        return Scaffold(
+          appBar: AppBar(
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: AppTokens.tint(AppTokens.primary, 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.eco_rounded,
+                      color: AppTokens.primary, size: 22),
+                ),
+                const SizedBox(width: 10),
+                const Text('ECOFOOD'),
+              ],
+            ),
+            actions: [
+              IconButton(
+                tooltip: 'Cấu hình IP Server',
+                onPressed: _showServerSettingsDialog,
+                icon: const Icon(Icons.settings_ethernet_rounded),
+              ),
+              IconButton(
+                tooltip: 'Đổi giao diện Sáng/Tối',
+                onPressed: widget.apiService.toggleDarkMode,
+                icon: Icon(isDark
+                    ? Icons.light_mode_rounded
+                    : Icons.dark_mode_outlined),
+              ),
+            ],
+          ),
+          body: Column(
             children: [
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey.withAlpha(100),
-                  borderRadius: BorderRadius.circular(4),
+              // THANH TRẠNG THÁI KẾT NỐI SERVER THẬT
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: widget.apiService.isConnected
+                        ? AppTokens.tint(AppTokens.primary, 0.12)
+                        : AppTokens.tint(AppTokens.danger, 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.circle,
+                        size: 9,
+                        color: widget.apiService.isConnected
+                            ? AppTokens.primary
+                            : AppTokens.danger,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          widget.apiService.isConnected
+                              ? 'Đã kết nối Server (${widget.apiService.baseUrl}) • ${widget.apiService.foods.length} món'
+                              : (widget.apiService.errorMessage ??
+                                  'Đang kết nối Server...'),
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: widget.apiService.isConnected
+                                ? AppTokens.primaryDark
+                                : AppTokens.danger,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (!widget.apiService.isConnected)
+                        InkWell(
+                          onTap: _onFilterChanged,
+                          child: const Text(
+                            'Thử lại',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              color: AppTokens.danger,
+                              decoration: TextDecoration.underline,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
-              const SizedBox(height: 16),
-              const Text(
-                'Thêm thực phẩm mới',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+
+              // TÌM KIẾM NHANH SẢN PHẨM
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+                child: TextField(
+                  controller: _searchCtrl,
+                  onChanged: (_) => _onFilterChanged(),
+                  decoration: InputDecoration(
+                    hintText: 'Tìm nhanh thực phẩm (VD: thịt ba chỉ, rau muống...)',
+                    prefixIcon: const Icon(Icons.search_rounded,
+                        color: AppTokens.primary),
+                    suffixIcon: _searchCtrl.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear_rounded, size: 20),
+                            onPressed: () {
+                              _searchCtrl.clear();
+                              _onFilterChanged();
+                            },
+                          )
+                        : null,
+                  ),
+                ),
               ),
-              const SizedBox(height: 4),
-              const Text(
-                'Chọn phương thức nhập liệu vào tủ lạnh',
-                style: TextStyle(fontSize: 13, color: Colors.grey),
-              ),
-              const SizedBox(height: 20),
-              _buildMethodTile(
-                icon: Icons.document_scanner_rounded,
-                color: AppTokens.primary,
-                title: 'Quét hóa đơn (OCR / Scanner)',
-                subtitle: 'Chụp hóa đơn siêu thị, AI tự nhận diện danh sách món',
-                onTap: () {
-                  Navigator.pop(sheetCtx);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          OcrScannerScreen(apiService: widget.apiService),
+
+              // HAI NÚT CHỤP NHẬN DIỆN AI
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _buildScanActionCard(
+                        title: 'Chụp bàn thực phẩm',
+                        subtitle: 'AI nhận diện nhiều món',
+                        icon: Icons.camera_alt_rounded,
+                        gradient: const [
+                          AppTokens.primary,
+                          AppTokens.primaryDark
+                        ],
+                        onTap: () => _openScanner(isReceiptMode: false),
+                      ),
                     ),
-                  );
-                },
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildScanActionCard(
+                        title: 'Chụp hóa đơn',
+                        subtitle: 'Trích xuất danh sách mua',
+                        icon: Icons.receipt_long_rounded,
+                        gradient: const [
+                          AppTokens.secondary,
+                          Color(0xFF0284C7)
+                        ],
+                        onTap: () => _openScanner(isReceiptMode: true),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+
+              // LỌC DANH MỤC
+              SizedBox(
+                height: 38,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  itemCount: _categories.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (context, idx) {
+                    final cat = _categories[idx];
+                    final isSelected = _selectedCategory == cat;
+                    return ChoiceChip(
+                      label: Text(cat),
+                      selected: isSelected,
+                      selectedColor: AppTokens.tint(AppTokens.primary, 0.2),
+                      labelStyle: TextStyle(
+                        fontWeight:
+                            isSelected ? FontWeight.w700 : FontWeight.w500,
+                        color: isSelected ? AppTokens.primaryDark : null,
+                      ),
+                      onSelected: (_) {
+                        setState(() => _selectedCategory = cat);
+                        _onFilterChanged();
+                      },
+                    );
+                  },
+                ),
               ),
               const SizedBox(height: 12),
-              _buildMethodTile(
-                icon: Icons.mic_rounded,
-                color: AppTokens.secondary,
-                title: 'Đọc hóa đơn (Voice AI)',
-                subtitle: 'Đọc tên món và số lượng bằng giọng nói tự nhiên',
-                onTap: () {
-                  Navigator.pop(sheetCtx);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          VoiceInputScreen(apiService: widget.apiService),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 12),
-              _buildMethodTile(
-                icon: Icons.edit_note_rounded,
-                color: AppTokens.warning,
-                title: 'Nhập thủ công (Manual)',
-                subtitle: 'Tự nhập tên món, số lượng và chọn ngày hết hạn',
-                onTap: () {
-                  Navigator.pop(sheetCtx);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          ManualAddScreen(apiService: widget.apiService),
-                    ),
-                  );
-                },
+
+              // DANH SÁCH THỰC PHẨM TỪ DATABASE
+              Expanded(
+                child: widget.apiService.isLoading
+                    ? const Center(
+                        child:
+                            CircularProgressIndicator(color: AppTokens.primary))
+                    : widget.apiService.foods.isEmpty
+                        ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Text(
+                                widget.apiService.isConnected
+                                    ? 'Không tìm thấy thực phẩm phù hợp trong cơ sở dữ liệu.'
+                                    : 'Chưa kết nối được Server. Hãy khởi chạy FastAPI và bấm "Thử lại".',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: subtext),
+                              ),
+                            ),
+                          )
+                        : RefreshIndicator(
+                            onRefresh: () async => _onFilterChanged(),
+                            child: ListView.builder(
+                              padding:
+                                  const EdgeInsets.fromLTRB(20, 4, 20, 24),
+                              itemCount: widget.apiService.foods.length,
+                              itemBuilder: (context, idx) {
+                                final food = widget.apiService.foods[idx];
+                                return _buildFoodCard(
+                                    food, surface, border, subtext);
+                              },
+                            ),
+                          ),
               ),
             ],
           ),
@@ -113,420 +328,169 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildMethodTile({
-    required IconData icon,
-    required Color color,
+  Widget _buildScanActionCard({
     required String title,
     required String subtitle,
+    required IconData icon,
+    required List<Color> gradient,
     required VoidCallback onTap,
   }) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final border = isDark ? AppTokens.darkBorder : AppTokens.lightBorder;
-
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(AppTokens.radiusMd),
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: gradient,
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+          boxShadow: [
+            BoxShadow(
+              color: AppTokens.tint(gradient.first, 0.28),
+              blurRadius: 12,
+              offset: const Offset(0, 5),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.white.withAlpha(45),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: Colors.white, size: 22),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              title,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              style: const TextStyle(color: Colors.white70, fontSize: 11.5),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFoodCard(
+      FoodGuide food, Color surface, Color border, Color subtext) {
+    final defaultMethod = food.defaultMethod;
+
+    return InkWell(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => FoodDetailScreen(food: food),
+          ),
+        );
+      },
+      borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: surface,
           borderRadius: BorderRadius.circular(AppTokens.radiusMd),
           border: Border.all(color: border),
         ),
         child: Row(
           children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: AppTokens.tint(color, 0.15),
-                borderRadius: BorderRadius.circular(14),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                width: 68,
+                height: 68,
+                color: AppTokens.tint(AppTokens.primary, 0.12),
+                child: food.thumbnailUrl != null
+                    ? Image.network(
+                        food.thumbnailUrl!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const Icon(
+                            Icons.restaurant_rounded,
+                            color: AppTokens.primary,
+                            size: 30),
+                      )
+                    : const Icon(Icons.restaurant_rounded,
+                        color: AppTokens.primary, size: 30),
               ),
-              child: Icon(icon, color: color, size: 26),
             ),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w800, fontSize: 15)),
-                  const SizedBox(height: 2),
-                  Text(subtitle,
-                      style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          food.name,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w800, fontSize: 16),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: AppTokens.tint(AppTokens.primary, 0.12),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          food.category,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: AppTokens.primaryDark,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  if (defaultMethod != null)
+                    Row(
+                      children: [
+                        const Icon(Icons.ac_unit_rounded,
+                            size: 14, color: AppTokens.secondary),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            '${defaultMethod.storageZone} • ${defaultMethod.shelfLifeText}',
+                            style: TextStyle(fontSize: 12.5, color: subtext),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Có ${food.methods.length} cách bảo quản • Bấm để xem chi tiết',
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      color: AppTokens.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ],
               ),
             ),
             const Icon(Icons.chevron_right_rounded, color: Colors.grey),
           ],
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final surface = isDark ? AppTokens.darkSurface : AppTokens.lightSurface;
-    final border = isDark ? AppTokens.darkBorder : AppTokens.lightBorder;
-
-    final tabs = [
-      _HomeOverviewTab(
-        apiService: widget.apiService,
-        onGoStorage: () => setState(() => _activeTab = 1),
-        onGoRecommend: () => setState(() => _activeTab = 2),
-      ),
-      StorageDetailScreen(
-        apiService: widget.apiService,
-        showBackButton: false,
-      ),
-      RecommendScreen(apiService: widget.apiService),
-      SettingScreen(apiService: widget.apiService),
-    ];
-
-    return Scaffold(
-      body: tabs[_activeTab],
-      bottomNavigationBar: Container(
-        height: 70,
-        decoration: BoxDecoration(
-          color: surface,
-          border: Border(top: BorderSide(color: border)),
-        ),
-        child: Row(
-          children: [
-            _buildNavTab(0, Icons.home_outlined, Icons.home_rounded, 'Trang chủ'),
-            _buildNavTab(
-                1, Icons.kitchen_outlined, Icons.kitchen_rounded, 'Kho đồ'),
-            // Nút dấu '+' ở giữa giống TikTok / YouTube
-            Expanded(
-              child: GestureDetector(
-                onTap: _openAddMenuPopup,
-                child: Center(
-                  child: Container(
-                    width: 52,
-                    height: 38,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [AppTokens.primary, AppTokens.primaryDark],
-                      ),
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppTokens.tint(AppTokens.primary, 0.35),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: const Icon(Icons.add_rounded,
-                        color: Colors.white, size: 28),
-                  ),
-                ),
-              ),
-            ),
-            _buildNavTab(2, Icons.restaurant_menu_outlined,
-                Icons.restaurant_menu_rounded, 'Gợi ý'),
-            _buildNavTab(
-                3, Icons.settings_outlined, Icons.settings_rounded, 'Cài đặt'),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNavTab(
-      int index, IconData icon, IconData activeIcon, String label) {
-    final isSelected = _activeTab == index;
-    return Expanded(
-      child: InkWell(
-        onTap: () => setState(() => _activeTab = index),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              isSelected ? activeIcon : icon,
-              color: isSelected ? AppTokens.primary : Colors.grey,
-              size: 24,
-            ),
-            const SizedBox(height: 3),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                color: isSelected ? AppTokens.primary : Colors.grey,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _HomeOverviewTab extends StatelessWidget {
-  final ApiService apiService;
-  final VoidCallback onGoStorage;
-  final VoidCallback onGoRecommend;
-
-  const _HomeOverviewTab({
-    required this.apiService,
-    required this.onGoStorage,
-    required this.onGoRecommend,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: apiService,
-      builder: (context, _) {
-        final isDark = Theme.of(context).brightness == Brightness.dark;
-        final surface =
-            isDark ? AppTokens.darkSurface : AppTokens.lightSurface;
-        final border = isDark ? AppTokens.darkBorder : AppTokens.lightBorder;
-        final urgent = apiService.expiringSoonItems;
-
-        return SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Chào Phú 👋',
-                          style: TextStyle(
-                              fontSize: 22, fontWeight: FontWeight.w800),
-                        ),
-                        Text(
-                          'Tủ lạnh hiện có ${apiService.items.length} thực phẩm',
-                          style:
-                              const TextStyle(fontSize: 13, color: Colors.grey),
-                        ),
-                      ],
-                    ),
-                    TextButton.icon(
-                      onPressed: onGoStorage,
-                      icon: const Icon(Icons.inventory_2_outlined,
-                          size: 18, color: AppTokens.primary),
-                      label: const Text(
-                        'Toàn bộ kho',
-                        style: TextStyle(
-                            color: AppTokens.primary,
-                            fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 18),
-
-                // 3 Khu vực lưu trữ (Bấm vào mở Screen 4 lọc theo ngăn)
-                Row(
-                  children: [
-                    _zoneCard(
-                      context,
-                      'Ngăn mát',
-                      Icons.ac_unit_rounded,
-                      AppTokens.secondary,
-                      apiService.itemsByZone('Ngăn mát').length,
-                    ),
-                    const SizedBox(width: 10),
-                    _zoneCard(
-                      context,
-                      'Ngăn đông',
-                      Icons.severe_cold_rounded,
-                      AppTokens.purpleFreeze,
-                      apiService.itemsByZone('Ngăn đông').length,
-                    ),
-                    const SizedBox(width: 10),
-                    _zoneCard(
-                      context,
-                      'Tủ khô',
-                      Icons.kitchen_rounded,
-                      AppTokens.warning,
-                      apiService.itemsByZone('Tủ khô').length,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 22),
-
-                // Thẻ điều hướng nhanh sang Screen 10 (Recommend)
-                InkWell(
-                  onTap: onGoRecommend,
-                  borderRadius: BorderRadius.circular(AppTokens.radiusMd),
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [AppTokens.primary, AppTokens.primaryDark],
-                      ),
-                      borderRadius: BorderRadius.circular(AppTokens.radiusMd),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.auto_awesome_rounded,
-                            color: Colors.white, size: 30),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Gợi ý món ăn hôm nay',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 15,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                'Giải cứu ${urgent.length} thực phẩm sắp hết hạn',
-                                style: const TextStyle(
-                                    color: Colors.white70, fontSize: 12),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const Icon(Icons.arrow_forward_ios_rounded,
-                            color: Colors.white, size: 16),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 22),
-
-                const Text(
-                  '🚨 Thực phẩm sắp hết hạn',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 12),
-                if (urgent.isEmpty)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: surface,
-                      borderRadius: BorderRadius.circular(AppTokens.radiusMd),
-                      border: Border.all(color: border),
-                    ),
-                    child: const Text(
-                      'Tuyệt vời! Chưa có món nào sắp hết hạn.',
-                      textAlign: TextAlign.center,
-                    ),
-                  )
-                else
-                  ...urgent.map((item) {
-                    final color = item.daysLeft <= 1
-                        ? AppTokens.danger
-                        : AppTokens.warning;
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 10),
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: surface,
-                        borderRadius: BorderRadius.circular(AppTokens.radiusMd),
-                        border: Border.all(color: AppTokens.tint(color, 0.5)),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.timer_outlined, color: color),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(item.name,
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 15)),
-                                Text('${item.quantityDisplay} • ${item.zone}',
-                                    style: const TextStyle(
-                                        fontSize: 12, color: Colors.grey)),
-                              ],
-                            ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: AppTokens.tint(color, 0.15),
-                              borderRadius:
-                                  BorderRadius.circular(AppTokens.radiusPill),
-                            ),
-                            child: Text(
-                              'Còn ${item.daysLeft} ngày',
-                              style: TextStyle(
-                                  color: color,
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 12),
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.check_circle_outline_rounded,
-                                color: AppTokens.primary),
-                            onPressed: () => apiService.consumeItem(item.id),
-                          ),
-                        ],
-                      ),
-                    );
-                  }),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _zoneCard(BuildContext context, String zone, IconData icon,
-      Color accent, int count) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final surface = isDark ? AppTokens.darkSurface : AppTokens.lightSurface;
-    final border = isDark ? AppTokens.darkBorder : AppTokens.lightBorder;
-
-    return Expanded(
-      child: InkWell(
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => StorageDetailScreen(
-                apiService: apiService,
-                initialZone: zone,
-                showBackButton: true,
-              ),
-            ),
-          );
-        },
-        borderRadius: BorderRadius.circular(AppTokens.radiusMd),
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: surface,
-            borderRadius: BorderRadius.circular(AppTokens.radiusMd),
-            border: Border.all(color: border),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(icon, color: accent, size: 24),
-              const SizedBox(height: 10),
-              Text(zone,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w800, fontSize: 14)),
-              Text('$count món',
-                  style: TextStyle(
-                      fontSize: 12,
-                      color: accent,
-                      fontWeight: FontWeight.w600)),
-            ],
-          ),
         ),
       ),
     );
